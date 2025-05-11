@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pixhash"
+version = "0.1.0"
+description = "CTI tool to extract and hash images from websites"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+  { name="Faisal Albuloushi", email="SQL@hotmail.co.uk" }
+]
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+pixhash = "pixhash.cli:main"
