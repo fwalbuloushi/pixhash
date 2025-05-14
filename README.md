@@ -52,8 +52,15 @@ pixhash https://example.com -t 5 --algo md5
 
 Slow down requests by 2 seconds and pretend to be a mobile browser:
 ```
-pixhash --delay 2 --agent mobile https://example.com
+pixhash https://example.com --delay 2 --agent mobile
 ```
+
+> [!IMPORTANT]
+> If your URL’s query string uses the `&` separator, wrap it in single quotes so your shell doesn’t treat `&` as the background operator.  
+>
+> ```bash
+> pixhash 'https://example.com/page?foo=1&bar=2' --delay 5
+> ```
 
 ## How it works
 
