@@ -2,7 +2,7 @@
 
 [![PyPI version](https://img.shields.io/pypi/v/pixhash)](https://pypi.org/project/pixhash/) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Pixhash** is a simple Cyber Threat Intelligence (CTI) tool that extracts all images from a webpage (including those referenced in CSS) and calculate their hashes.
+**Pixhash** is a simple Cyber Threat Intelligence (CTI) tool that extracts all images from a webpage (including those referenced in CSS), calculate their hashes, and optionally download them.
 
 ## Disclaimer
 
@@ -30,29 +30,40 @@ pixhash [OPTIONS] URL
 
 ### Options
 
-| Flag | Description |
-| :--- | :--- |
-| `-t`, `--timeout TIMEOUT` | Network timeout in seconds (default: 10.0) |
-| `--algo {sha256,sha1,md5}` | Hash algorithm to use (default: `sha256`) |
-| `--agent {desktop,mobile}` | User-Agent type (default: `desktop`) |
-| `--delay DELAY` | Seconds to wait between each HTTP request (default: 0) |
-| `-h`, `--help` | Show this help message |
+| Flag | Description | Default |
+| :--- | :--- | :--- |
+| `-t`, `--timeout <sec>` | Network timeout in seconds | `10` |
+| `--algo {sha256,sha1,md5}` | Hash algorithm to use | `sha256` |
+| `-U`, `--user-agent <string>` | Custom User-Agent header for all HTTP requests | `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0` |
+| `--delay <sec>` | Seconds to wait between each HTTP request | `0` |
+| `--download` | Download each image to disk and hash it *(requires -o/--output-dir)* | *disabled* |
+| `-o`, `--output-dir <path>` | Directory to save images (when using --download) and/or write the timestamped log file (pixhash_YYYYMMDD_HHMMSS.txt) | `none` |
 
 ## Examples
 
-Basic usage with default settings:
+#### 1) Basic usage with default settings. Just hash & print the results (no downloads, no log):
 ```
 pixhash https://example.com
 ```
 
-Set a 5-second timeout and use MD5:
+#### 2) Hash & write a log file (no images downloaded):
 ```
-pixhash https://example.com -t 5 --algo md5
+pixhash https://example.com -o ./hash-logs
 ```
 
-Slow down requests by 2 seconds and pretend to be a mobile browser:
+#### 3) Download each image, hash it, AND write log:
 ```
-pixhash https://example.com --delay 2 --agent mobile
+pixhash https://example.com --download -o ./downloaded-images
+```
+
+#### 4) Custom User-Agent:
+```
+pixhash https://example.com -U "CustomUA/1.2" --download -o ./my-images
+```
+
+#### 5) Customizing everything (Spaghetti):
+```
+pixhash https://example.com -U "CustomUA/1.2" -t 4 --algo md5 --delay 3 --download -o ./Org-1
 ```
 
 > [!IMPORTANT]
@@ -62,18 +73,28 @@ pixhash https://example.com --delay 2 --agent mobile
 > pixhash 'https://example.com/page?foo=1&bar=2' --delay 5
 > ```
 
-## How it works
+## Sample Log File
 
-1. Fetches the HTML of the page you specify.
+When you run with `-o ./logs`, you will get a file named like `pixhash_20250519_153012.txt` containing:
+```
+Pixhash Run Log
+================
+Target URL:    https://example.com
+Date:          2025-05-19
+Time:          15:30:12
+Algorithm:     sha256
+User-Agent:    Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0
+Output Dir:    ./logs
 
-2. Parses all <img>, <source> tags, CSS url(...) references (inline & external), Open Graph images, and icons.
+Results
+-------
+https://example.com/img/logo.png >> d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2
+https://example.com/css/bg.jpg     >> a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1
+https://example.com/svg/icon.svg   >> b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3b3
 
-3. Downloads each resource (respecting your timeout and delay).
-
-4. Hashes the raw image bytes using your chosen algorithm.
-
-5. Prints each image’s full URL and its calculated hash.
-
+Hash results and log file saved into:
+./logs
+```
 
 ## License
 
