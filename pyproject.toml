@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pixhash"
-version = "0.1.0"
+version = "1.0.0"
 description = "CTI tool to extract and hash images from websites"
 readme = "README.md"
 license = { text = "MIT" }
