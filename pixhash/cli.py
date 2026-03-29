@@ -9,6 +9,7 @@ from urllib.error import HTTPError, URLError
 from pixhash.constants import (
     ANSI_BOLD_RED, ANSI_BOLD_YELLOW, ANSI_RESET,
     DEFAULT_ALGO, DEFAULT_DELAY, DEFAULT_TIMEOUT, DEFAULT_USER_AGENT,
+    MAX_IMAGES, MAX_RESPONSE_BYTES,
 )
 from pixhash.extractor import ImageURLExtractor, STYLE_URL_PATTERN
 from pixhash.fetcher import Fetcher
@@ -27,7 +28,7 @@ def ensure_writable_dir(path: str) -> None:
 
 
 def print_header() -> None:
-    print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} Pixhash v1.1.0")
+    print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} Pixhash v1.2.0")
     print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} https://github.com/fwalbuloushi/pixhash")
     print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} CTI tool to extract and hash images from websites")
 
@@ -35,7 +36,7 @@ def print_header() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         add_help=True,
-        description=f"{ANSI_BOLD_RED}Pixhash v1.1.0{ANSI_RESET} – CTI tool to extract and hash images from websites",
+        description=f"{ANSI_BOLD_RED}Pixhash v1.2.0{ANSI_RESET} – CTI tool to extract and hash images from websites",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("-t", "--timeout", type=int, default=DEFAULT_TIMEOUT, help="Network timeout in seconds")
@@ -44,6 +45,8 @@ def main() -> None:
     parser.add_argument("--delay", type=int, default=DEFAULT_DELAY, help="Seconds to wait between each HTTP request")
     parser.add_argument("--download", action="store_true", help="Download files to disk as you hash them (requires -o)")
     parser.add_argument("-o", "--output-dir", dest="output_dir", default=None, help="Directory to save downloaded images and/or log file")
+    parser.add_argument("--max-images", type=int, default=MAX_IMAGES, dest="max_images", help="Maximum number of images to process")
+    parser.add_argument("--max-size", type=int, default=MAX_RESPONSE_BYTES // 1_048_576, dest="max_size", metavar="MB", help="Maximum response size per request in MB")
     parser.add_argument("target", metavar="URL", type=str, nargs="?", help="URL to scan (must begin with http or https)")
     args = parser.parse_args()
 
@@ -62,8 +65,7 @@ def main() -> None:
         sys.exit(f"{ANSI_BOLD_RED}[#] Error:{ANSI_RESET} --download requires specifying an output directory with -o/--output-dir")
 
     ua = args.user_agent
-    fetcher = Fetcher(user_agent=ua, timeout=args.timeout, delay=args.delay)
-    socket.setdefaulttimeout(args.timeout)
+    fetcher = Fetcher(user_agent=ua, timeout=args.timeout, delay=args.delay, max_size=args.max_size * 1_048_576)
 
     print_header()
     print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} Target: {args.target}\n")
@@ -71,7 +73,10 @@ def main() -> None:
     try:
         html = fetcher.fetch_text(args.target)
     except (HTTPError, URLError, socket.timeout):
-        logging.error(f"{ANSI_BOLD_RED}Error:{ANSI_RESET} Timeout")
+        logging.error(f"{ANSI_BOLD_RED}Error:{ANSI_RESET} Could not fetch target")
+        sys.exit(1)
+    except ValueError as e:
+        logging.error(f"{ANSI_BOLD_RED}Error:{ANSI_RESET} {e}")
         sys.exit(1)
 
     extractor = ImageURLExtractor(args.target)
@@ -82,12 +87,20 @@ def main() -> None:
             text = fetcher.fetch_text(css_url)
             for ref in STYLE_URL_PATTERN.findall(text):
                 extractor._add(ref)
-        except (HTTPError, URLError, socket.timeout):
+        except (HTTPError, URLError, socket.timeout, ValueError):
             continue
+
+    img_urls = sorted(extractor.urls)
+    if len(img_urls) > args.max_images:
+        print(
+            f"{ANSI_BOLD_YELLOW}[!]{ANSI_RESET} {len(img_urls)} images found; "
+            f"processing first {args.max_images} (use --max-images to raise the limit)."
+        )
+        img_urls = img_urls[:args.max_images]
 
     results = []
 
-    for img in sorted(extractor.urls):
+    for img in img_urls:
         if args.download:
             digest = fetcher.hash_and_save_image(img, args.algo, args.output_dir)
             if digest:

@@ -6,6 +6,11 @@ DEFAULT_USER_AGENT: str = (
     "Gecko/20100101 Firefox/115.0"
 )
 
+# Cap response reads at 50 MB to prevent memory exhaustion
+MAX_RESPONSE_BYTES: int = 52_428_800
+# Default ceiling on images processed per run
+MAX_IMAGES: int = 500
+
 ANSI_BOLD_RED: str    = "\033[1;31m"
 ANSI_BOLD_YELLOW: str = "\033[1;33m"
 ANSI_RESET: str       = "\033[0m"

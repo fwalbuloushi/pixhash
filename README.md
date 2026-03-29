@@ -36,6 +36,8 @@ pixhash [OPTIONS] URL
 | `--algo {sha256,sha1,md5}` | Hash algorithm to use | `sha256` |
 | `-U`, `--user-agent <string>` | Custom User-Agent header for all HTTP requests | `Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:115.0) Gecko/20100101 Firefox/115.0` |
 | `--delay <sec>` | Seconds to wait between each HTTP request | `0` |
+| `--max-images <n>` | Maximum number of images to process per run | `500` |
+| `--max-size <MB>` | Maximum response size per request in MB | `50` |
 | `--download` | Download each image to disk and hash it *(requires -o/--output-dir)* | *disabled* |
 | `-o`, `--output-dir <path>` | Directory to save images (when using --download) and/or write the timestamped log file (pixhash_YYYYMMDD_HHMMSS.txt) | `none` |
 
