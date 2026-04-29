@@ -80,5 +80,28 @@ class TestFiltering(unittest.TestCase):
         self.assertIn("https://upload.wikimedia.org/wikipedia/commons/thumb/image-endpoint", urls)
 
 
+class TestAddCssUrls(unittest.TestCase):
+    def test_resolves_against_css_base_url(self):
+        e = ImageURLExtractor("https://example.com")
+        e.add_css_urls("body { background: url('../images/bg.png'); }", "https://example.com/css/style.css")
+        self.assertIn("https://example.com/images/bg.png", e.urls)
+
+    def test_absolute_url_unaffected_by_base(self):
+        e = ImageURLExtractor("https://example.com")
+        e.add_css_urls("body { background: url('https://cdn.example.com/img/bg.png'); }", "https://example.com/css/style.css")
+        self.assertIn("https://cdn.example.com/img/bg.png", e.urls)
+
+    def test_non_image_extension_filtered(self):
+        e = ImageURLExtractor("https://example.com")
+        e.add_css_urls("body { background: url('font.woff2'); }", "https://example.com/css/style.css")
+        self.assertEqual(e.urls, set())
+
+    def test_does_not_resolve_against_page_base(self):
+        e = ImageURLExtractor("https://example.com")
+        e.add_css_urls("body { background: url('logo.png'); }", "https://example.com/assets/css/style.css")
+        self.assertIn("https://example.com/assets/css/logo.png", e.urls)
+        self.assertNotIn("https://example.com/logo.png", e.urls)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -38,6 +38,7 @@ pixhash [OPTIONS] URL
 | `--delay <sec>` | Seconds to wait between each HTTP request | `0` |
 | `--max-images <n>` | Maximum number of images to process per run | `500` |
 | `--max-size <MB>` | Maximum response size per request in MB | `50` |
+| `--version` | Show the version number and exit | |
 | `--download` | Download each image to disk and hash it *(requires -o/--output-dir)* | *disabled* |
 | `-o`, `--output-dir <path>` | Directory to save images (when using --download) and/or write the timestamped log file (pixhash_YYYYMMDD_HHMMSS.txt) | `none` |
 

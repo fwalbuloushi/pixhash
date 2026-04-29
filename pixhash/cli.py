@@ -9,9 +9,9 @@ from urllib.error import HTTPError, URLError
 from pixhash.constants import (
     ANSI_BOLD_RED, ANSI_BOLD_YELLOW, ANSI_RESET,
     DEFAULT_ALGO, DEFAULT_DELAY, DEFAULT_TIMEOUT, DEFAULT_USER_AGENT,
-    MAX_IMAGES, MAX_RESPONSE_BYTES,
+    MAX_IMAGES, MAX_RESPONSE_BYTES, VERSION,
 )
-from pixhash.extractor import ImageURLExtractor, STYLE_URL_PATTERN
+from pixhash.extractor import ImageURLExtractor
 from pixhash.fetcher import Fetcher
 from pixhash.logger import write_log
 
@@ -28,7 +28,7 @@ def ensure_writable_dir(path: str) -> None:
 
 
 def print_header() -> None:
-    print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} Pixhash v1.2.0")
+    print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} Pixhash v{VERSION}")
     print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} https://github.com/fwalbuloushi/pixhash")
     print(f"{ANSI_BOLD_RED}[#]{ANSI_RESET} CTI tool to extract and hash images from websites")
 
@@ -36,9 +36,10 @@ def print_header() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(
         add_help=True,
-        description=f"{ANSI_BOLD_RED}Pixhash v1.2.0{ANSI_RESET} – CTI tool to extract and hash images from websites",
+        description=f"{ANSI_BOLD_RED}Pixhash v{VERSION}{ANSI_RESET} – CTI tool to extract and hash images from websites",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    parser.add_argument("--version", action="version", version=f"pixhash {VERSION}")
     parser.add_argument("-t", "--timeout", type=int, default=DEFAULT_TIMEOUT, help="Network timeout in seconds")
     parser.add_argument("--algo", choices=["sha256", "sha1", "md5"], default=DEFAULT_ALGO, help="Hash algorithm to use")
     parser.add_argument("--user-agent", "-U", dest="user_agent", default=DEFAULT_USER_AGENT, help="Custom User-Agent string")
@@ -85,8 +86,7 @@ def main() -> None:
     for css_url in extractor.css_links:
         try:
             text = fetcher.fetch_text(css_url)
-            for ref in STYLE_URL_PATTERN.findall(text):
-                extractor._add(ref)
+            extractor.add_css_urls(text, css_url)
         except (HTTPError, URLError, socket.timeout, ValueError):
             continue
 
@@ -119,8 +119,7 @@ def main() -> None:
             except ValueError:
                 continue
             except Exception as e:
-                msg = str(e).split(":")[-1].strip()
-                logging.error(f"{img} {ANSI_BOLD_YELLOW}>>{ANSI_RESET} {ANSI_BOLD_RED}Error:{ANSI_RESET} {msg}")
+                logging.error(f"{img} {ANSI_BOLD_YELLOW}>>{ANSI_RESET} {ANSI_BOLD_RED}Error:{ANSI_RESET} {e}")
 
     if results and args.output_dir:
         write_log(args.output_dir, args.target, args.algo, ua, results, args.download)

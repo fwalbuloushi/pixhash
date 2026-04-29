@@ -1,7 +1,7 @@
 import os
 import re
 from html.parser import HTMLParser
-from typing import List, Set
+from typing import List, Optional, Set
 from urllib.parse import urljoin, urlparse
 
 # Only these schemes are allowed
@@ -32,7 +32,6 @@ class ImageURLExtractor(HTMLParser):
         self.urls: Set[str] = set()
         self.css_links: List[str] = []
         self._in_style: bool = False
-        self._in_script: bool = False
 
     def handle_starttag(
         self, tag: str, attrs: List[tuple[str, str]]
@@ -71,27 +70,18 @@ class ImageURLExtractor(HTMLParser):
 
         if tag == "style":
             self._in_style = True
-        if tag == "script" and "src" not in a:
-            self._in_script = True
 
     def handle_endtag(self, tag: str) -> None:
-        tag = tag.lower()
-        if tag == "style":
+        if tag.lower() == "style":
             self._in_style = False
-        if tag == "script":
-            self._in_script = False
 
     def handle_data(self, data: str) -> None:
-        if self._in_style or self._in_script:
+        if self._in_style:
             for ref in STYLE_URL_PATTERN.findall(data):
                 self._add(ref)
 
-    def _add(self, src: str) -> None:
-        """
-        Normalize & filter a raw URL fragment before adding.
-        Skips any non-http(s) or non-image extension.
-        """
-        full = urljoin(self.base, src.strip())
+    def _add(self, src: str, base: Optional[str] = None) -> None:
+        full = urljoin(base if base is not None else self.base, src.strip())
         p = urlparse(full)
         if p.scheme not in ALLOWED_SCHEMES:
             return
@@ -99,3 +89,8 @@ class ImageURLExtractor(HTMLParser):
         if ext and ext not in IMAGE_EXTENSIONS:
             return
         self.urls.add(full)
+
+    def add_css_urls(self, css_text: str, base_url: str) -> None:
+        """Extract url() references from a CSS string, resolved against base_url."""
+        for ref in STYLE_URL_PATTERN.findall(css_text):
+            self._add(ref, base=base_url)

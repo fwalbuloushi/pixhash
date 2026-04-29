@@ -1,3 +1,5 @@
+VERSION: str = "1.3.0"
+
 DEFAULT_TIMEOUT: int = 10
 DEFAULT_ALGO: str = "sha256"
 DEFAULT_DELAY: int = 0

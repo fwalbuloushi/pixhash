@@ -1,4 +1,5 @@
 import hashlib
+import http.client
 import ipaddress
 import logging
 import os
@@ -7,7 +8,7 @@ import time
 from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
-from urllib.request import HTTPRedirectHandler, Request, build_opener
+from urllib.request import HTTPHandler, HTTPSHandler, Request, build_opener
 
 from pixhash.constants import ANSI_BOLD_RED, ANSI_BOLD_YELLOW, ANSI_RESET, MAX_RESPONSE_BYTES
 
@@ -41,15 +42,16 @@ def _is_private_ip(addr: str) -> bool:
         return False
 
 
-def _is_ssrf_target(hostname: str) -> bool:
-    """Resolve hostname and return True if any address is private/reserved."""
+def _check_host(hostname: str, port: int) -> list:
+    """Resolve hostname and raise URLError if any address is private/reserved."""
     try:
-        for info in socket.getaddrinfo(hostname, None):
-            if _is_private_ip(info[4][0]):
-                return True
-    except socket.gaierror:
-        pass
-    return False
+        infos = socket.getaddrinfo(hostname, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as exc:
+        raise URLError(f"DNS resolution failed for {hostname!r}: {exc}") from exc
+    for _af, _stype, _proto, _canon, addr in infos:
+        if _is_private_ip(addr[0]):
+            raise URLError(f"Blocked: {hostname!r} resolves to private address {addr[0]}")
+    return infos
 
 
 # Magic byte signatures for supported image formats
@@ -71,38 +73,80 @@ def _validate_image_magic(data: bytes) -> bool:
     # WebP: RIFF....WEBP
     if data.startswith(b"RIFF") and len(data) >= 12 and data[8:12] == b"WEBP":
         return True
-    # SVG / XML-based formats
+    # SVG: accept <svg directly, or <?xml only when <svg follows within 512 bytes
     stripped = data.lstrip()
-    if stripped.startswith((b"<svg", b"<?xml", b"<SVG", b"<?XML")):
+    if stripped[:4].lower() == b"<svg":
+        return True
+    if stripped[:5].lower() == b"<?xml" and b"<svg" in data[:512].lower():
         return True
     return False
 
 
-class _SSRFBlockingRedirectHandler(HTTPRedirectHandler):
-    """Block redirects that resolve to private/reserved addresses."""
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        hostname = urlparse(newurl).hostname or ""
-        if hostname and _is_ssrf_target(hostname):
-            raise URLError(f"Redirect to private address blocked: {newurl}")
-        return super().redirect_request(req, fp, code, msg, headers, newurl)
+class _ValidatingHTTPConnection(http.client.HTTPConnection):
+    """Resolves DNS once, checks the IP, then connects directly — no second lookup."""
+
+    def connect(self) -> None:
+        infos = _check_host(self.host, self.port)
+        af, socktype, proto, _canon, addr = infos[0]
+        sock = socket.socket(af, socktype, proto)
+        if self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+            sock.settimeout(self.timeout)
+        if self.source_address:
+            sock.bind(self.source_address)
+        sock.connect(addr)
+        self.sock = sock
+
+
+class _ValidatingHTTPSConnection(http.client.HTTPSConnection):
+    """Same as _ValidatingHTTPConnection but wraps the socket with TLS after connecting."""
+
+    def connect(self) -> None:
+        infos = _check_host(self.host, self.port)
+        af, socktype, proto, _canon, addr = infos[0]
+        sock = socket.socket(af, socktype, proto)
+        if self.timeout is not socket._GLOBAL_DEFAULT_TIMEOUT:
+            sock.settimeout(self.timeout)
+        if self.source_address:
+            sock.bind(self.source_address)
+        sock.connect(addr)
+        server_hostname = getattr(self, "_tunnel_host", None) or self.host
+        self.sock = self._context.wrap_socket(sock, server_hostname=server_hostname)
+
+
+class _ValidatingHTTPHandler(HTTPHandler):
+    def http_open(self, req):
+        return self.do_open(_ValidatingHTTPConnection, req)
+
+
+class _ValidatingHTTPSHandler(HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(_ValidatingHTTPSConnection, req, context=self._context)
 
 
 class Fetcher:
     def __init__(self, user_agent: str, timeout: int, delay: int, max_size: int = MAX_RESPONSE_BYTES) -> None:
-        self.opener = build_opener(_SSRFBlockingRedirectHandler())
+        self.opener = build_opener(_ValidatingHTTPHandler, _ValidatingHTTPSHandler)
         self.headers = {"User-Agent": user_agent}
         self.timeout = timeout
         self.delay = delay
         self.max_size = max_size
+        self._last_request: dict[str, float] = {}
 
-    def _guard_ssrf(self, url: str) -> None:
-        """Raise URLError if the URL resolves to a private/reserved address."""
+    def _apply_delay(self, url: str) -> None:
+        """Enforce per-domain rate limiting before each request."""
+        if self.delay <= 0:
+            return
         hostname = urlparse(url).hostname or ""
-        if hostname and _is_ssrf_target(hostname):
-            raise URLError(f"Request to private address blocked: {url}")
+        if not hostname:
+            return
+        now = time.monotonic()
+        wait = self.delay - (now - self._last_request.get(hostname, 0.0))
+        if wait > 0:
+            time.sleep(wait)
+        self._last_request[hostname] = time.monotonic()
 
     def fetch_bytes(self, url: str) -> bytes:
-        self._guard_ssrf(url)
+        self._apply_delay(url)
         req = Request(url, headers=self.headers)
         resp = self.opener.open(req, timeout=self.timeout)
         ctype = resp.headers.get("Content-Type", "")
@@ -113,19 +157,18 @@ class Fetcher:
             raise ValueError(f"Response exceeds {self.max_size // 1_048_576} MB limit")
         if not _validate_image_magic(data):
             raise ValueError("Response does not match any known image format")
-        if self.delay > 0:
-            time.sleep(self.delay)
         return data
 
     def fetch_text(self, url: str) -> str:
-        self._guard_ssrf(url)
+        self._apply_delay(url)
         req = Request(url, headers=self.headers)
         resp = self.opener.open(req, timeout=self.timeout)
+        ctype = resp.headers.get("Content-Type", "")
+        if ctype and not ctype.startswith(("text/", "application/")):
+            raise ValueError(f"Unexpected content-type for text fetch: {ctype!r}")
         data = resp.read(self.max_size + 1)
         if len(data) > self.max_size:
             raise ValueError(f"Response exceeds {self.max_size // 1_048_576} MB limit")
-        if self.delay > 0:
-            time.sleep(self.delay)
         return data.decode("utf-8", errors="replace")
 
     def hash_image(self, url: str, algo: str) -> str:
@@ -137,7 +180,7 @@ class Fetcher:
     def hash_and_save_image(
         self, url: str, algo: str, output_dir: str
     ) -> Optional[str]:
-        self._guard_ssrf(url)
+        self._apply_delay(url)
         h = hashlib.new(algo)
         req = Request(url, headers=self.headers)
         out_path = None
@@ -179,8 +222,6 @@ class Fetcher:
                         )
                     h.update(chunk)
                     fout.write(chunk)
-            if self.delay > 0:
-                time.sleep(self.delay)
         except HTTPError as e:
             logging.error(
                 f"{url} {ANSI_BOLD_YELLOW}>>{ANSI_RESET} {ANSI_BOLD_RED}Error:{ANSI_RESET} {e.code}"
